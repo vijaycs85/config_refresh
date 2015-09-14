@@ -199,7 +199,7 @@ Class ConfigRefreshManager {
   protected function getModules() {
     if (!isset($this->modules)) {
       $listing = new ExtensionDiscovery(\Drupal::root());
-      $this->modules = $listing->scan('module');
+      $this->modules = $listing->scan('module') + $listing->scan('profile');
     }
     return $this->modules;
   }
