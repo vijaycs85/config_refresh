@@ -8,6 +8,7 @@
 namespace Drupal\config_refresh;
 
 use Drupal\Core\Config\ConfigManagerInterface;
+use Drupal\Core\Config\Entity\ConfigEntityTypeInterface;
 use Drupal\Core\Entity\EntityManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
@@ -38,7 +39,7 @@ Class ConfigRefreshManager {
    * @param $module_name
    * @param string $config_type
    */
-  public function refresh($module_name, $config_type) {
+  public function refreshAsBatch($module_name, $config_type) {
     $config_entity_type = \Drupal::entityManager()->getDefinition($config_type);
     $entity_storage = \Drupal::entityManager()->getStorage($config_type);
     $modules = $this->getModules();
@@ -66,7 +67,22 @@ Class ConfigRefreshManager {
     }
   }
 
+  /**
+   * Refresh all config entity types.
+   *
+   * @param string $module_name
+   *   The module name to refresh.
+   */
+  public function refreshByModule($module_name) {
+    $extension = $this->getModules()[$module_name];
+    foreach ($this->findConfigurationTypesByModule($module_name) as $config_entity_type_id => $config_entity_type) {
+      $entity_storage = \Drupal::entityManager()->getStorage($config_entity_type->id());
+      $this->updateConfigEntity($extension, $entity_storage, $config_entity_type);
+    }
+  }
+
   public function refreshById($module_name, $config_type, $config_id) {
+    /** @var \Drupal\Core\Config\Entity\ConfigEntityTypeInterface $config_entity_type */
     $config_entity_type = \Drupal::entityManager()->getDefinition($config_type);
     $entity_storage = \Drupal::entityManager()->getStorage($config_type);
     $modules = $this->getModules();
@@ -88,9 +104,9 @@ Class ConfigRefreshManager {
   /**
    * @param Extension $module
    * @param EntityStorageInterface $storage
-   * @param EntityTypeInterface $type
+   * @param ConfigEntityTypeInterface $type
    */
-  public function updateConfigEntity(Extension $module, EntityStorageInterface $storage, EntityTypeInterface $type) {
+  public function updateConfigEntity(Extension $module, EntityStorageInterface $storage, ConfigEntityTypeInterface $type) {
     $extension_path = $module->getPath();
     // If the extension provides configuration schema clear the definitions.
     if (is_dir($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY)) {
@@ -115,7 +131,25 @@ Class ConfigRefreshManager {
     }
   }
 
-  public function findConfigurationTypes($module_name) {
+  /**
+   * @param $module_name
+   *
+   * @return string[]
+   *   The config entity type label keyed by ID.
+   */
+  public function findConfigurationTypesLabels($module_name) {
+    return array_map(function (ConfigEntityTypeInterface $config_entity_type) {
+      return $config_entity_type->getLabel();
+    }, $this->findConfigurationTypesByModule($module_name));
+  }
+
+  /**
+   * @param $module_name
+   *
+   * @return \Drupal\Core\Config\Entity\ConfigEntityTypeInterface[]
+   *   The config entity type keyed by ID.
+   */
+  protected function findConfigurationTypesByModule($module_name) {
     $config_types = array();
     $modules = $this->getModules();
     $module = $modules[$module_name];
@@ -129,12 +163,12 @@ Class ConfigRefreshManager {
           // Handle config entities.
           if ($entity_type_id = $this->configManager->getEntityTypeIdByName($config_name)) {
             $entity_type = $this->configManager->getEntityManager()->getDefinition($entity_type_id);
-            $config_types[$entity_type_id] = $entity_type->getLabel();
+            $config_types[$entity_type_id] = $entity_type;
           }
         }
       }
-      return $config_types;
     }
+    return $config_types;
   }
 
   public function getEntityIds($module_name, $config_type) {
@@ -163,9 +197,11 @@ Class ConfigRefreshManager {
   }
 
   protected function getModules() {
-    $listing = new ExtensionDiscovery(\Drupal::root());
-    $modules = $listing->scan('module');
-    return $modules;
+    if (!isset($this->modules)) {
+      $listing = new ExtensionDiscovery(\Drupal::root());
+      $this->modules = $listing->scan('module');
+    }
+    return $this->modules;
   }
 
   protected function updateTestConfigEntity($extension_path, Extension $module, EntityStorageInterface $entity_storage, EntityTypeInterface $config_entity_type) {

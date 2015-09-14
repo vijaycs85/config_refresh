@@ -138,7 +138,7 @@ class ConfigRefreshForm extends FormBase {
       $this->configRefreshManager->refreshById($form_state->getValue('module'), $form_state->getValue('config_type'), $form_state->getValue('config_name'));
     }
     else {
-      $this->configRefreshManager->refresh($form_state->getValue('module'), $form_state->getValue('config_type'));
+      $this->configRefreshManager->refreshAsBatch($form_state->getValue('module'), $form_state->getValue('config_type'));
     }
 
     drupal_set_message('Updated configuration successfully.');
@@ -158,7 +158,7 @@ class ConfigRefreshForm extends FormBase {
   }
 
   protected function findConfigurationType($module) {
-    $config_types =  $this->configRefreshManager->findConfigurationTypes($module);
+    $config_types =  $this->configRefreshManager->findConfigurationTypesLabels($module);
     return array('all' => $this->t('- All -')) + $config_types;
 
   }
