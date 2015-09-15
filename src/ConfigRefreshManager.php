@@ -29,11 +29,15 @@ Class ConfigRefreshManager {
 
   protected $entityManager;
 
+  protected $folderTypes = [];
+
   public function __construct(ConfigManagerInterface $config_manager, EntityManagerInterface $entity_manager) {
     $this->configManager = $config_manager;
     $this->entityManager =  $entity_manager;
-  }
 
+    $this->folderTypes[] = InstallStorage::CONFIG_INSTALL_DIRECTORY;
+    $this->folderTypes[] = InstallStorage::CONFIG_OPTIONAL_DIRECTORY;
+  }
 
   /**
    * @param $module_name
@@ -89,14 +93,15 @@ Class ConfigRefreshManager {
     $module = $modules[$module_name];
     $extension_path = $module->getPath();
 
-    if (is_dir($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY)) {
-      $install_storage = new FileStorage($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY);
-      $loaded_entity = $entity_storage->load($config_id);
-      $data = $loaded_entity->toArray();
-      unset($data['uuid']);
-      $config = new Config($config_entity_type->getConfigPrefix() . '.' . $config_id, $install_storage, \Drupal::service('event_dispatcher'), \Drupal::service('config.typed'));
-      $config->setData($data)->save();
-
+    foreach ($this->folderTypes as $folder_type) {
+      if (is_dir($extension_path . '/' . $folder_type)) {
+        $install_storage = new FileStorage($extension_path . '/' . $folder_type);
+        $loaded_entity = $entity_storage->load($config_id);
+        $data = $loaded_entity->toArray();
+        unset($data['uuid']);
+        $config = new Config($config_entity_type->getConfigPrefix() . '.' . $config_id, $install_storage, \Drupal::service('event_dispatcher'), \Drupal::service('config.typed'));
+        $config->setData($data)->save();
+      }
     }
   }
 
@@ -109,25 +114,28 @@ Class ConfigRefreshManager {
   public function updateConfigEntity(Extension $module, EntityStorageInterface $storage, ConfigEntityTypeInterface $type) {
     $extension_path = $module->getPath();
     // If the extension provides configuration schema clear the definitions.
-    if (is_dir($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY)) {
-      $install_storage = new FileStorage($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY);
-      $entities = $install_storage->listAll($type->getConfigPrefix());
-      if (count($entities)) {
-        // Ensure module is installed.
-        \Drupal::service('module_installer')->install(array($module->getName()));
+    foreach ($this->folderTypes as $folder_type) {
+      if (is_dir($extension_path . '/' . $folder_type)) {
+        $install_storage = new FileStorage($extension_path . '/' . $folder_type);
+        $entities = $install_storage->listAll($type->getConfigPrefix());
+        if (count($entities)) {
+          // Ensure module is installed.
+          \Drupal::service('module_installer')
+            ->install(array($module->getName()));
+        }
+        foreach ($entities as $name) {
+          $id = substr($name, strlen($type->getConfigPrefix()) + 1);
+          $loaded_entity = $storage->load($id);
+          $data = $loaded_entity->toArray();
+          unset($data['uuid']);
+          $config = new Config($name, $install_storage, \Drupal::service('event_dispatcher'), \Drupal::service('config.typed'));
+          $config->setData($data)->save();
+        }
       }
-      foreach ($entities as $name) {
-        $id = substr($name, strlen($type->getConfigPrefix()) + 1);
-        $loaded_entity = $storage->load($id);
-        $data = $loaded_entity->toArray();
-        unset($data['uuid']);
-        $config = new Config($name, $install_storage, \Drupal::service('event_dispatcher'), \Drupal::service('config.typed'));
-        $config->setData($data)->save();
-      }
-    }
 
-    if (FALSE) {
-      $this->updateTestConfigEntity($extension_path, $module, $storage, $type);
+      if (FALSE) {
+        $this->updateTestConfigEntity($extension_path, $module, $storage, $type);
+      }
     }
   }
 
@@ -155,15 +163,17 @@ Class ConfigRefreshManager {
     $module = $modules[$module_name];
     $extension_path = $module->getPath();
     // If the extension provides configuration schema clear the definitions.
-    if (is_dir($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY)) {
-      $install_storage = new FileStorage($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY);
-      $config_list = $install_storage->listAll();
-      if (count($config_list)) {
-        foreach ($config_list as $config_name) {
-          // Handle config entities.
-          if ($entity_type_id = $this->configManager->getEntityTypeIdByName($config_name)) {
-            $entity_type = $this->configManager->getEntityManager()->getDefinition($entity_type_id);
-            $config_types[$entity_type_id] = $entity_type;
+    foreach ($this->folderTypes as $folder_type) {
+      if (is_dir($extension_path . '/' . $folder_type)) {
+        $install_storage = new FileStorage($extension_path . '/' . $folder_type);
+        $config_list = $install_storage->listAll();
+        if (count($config_list)) {
+          foreach ($config_list as $config_name) {
+            // Handle config entities.
+            if ($entity_type_id = $this->configManager->getEntityTypeIdByName($config_name)) {
+              $entity_type = $this->configManager->getEntityManager()->getDefinition($entity_type_id);
+              $config_types[$entity_type_id] = $entity_type;
+            }
           }
         }
       }
@@ -178,22 +188,24 @@ Class ConfigRefreshManager {
     $extension_path = $module->getPath();
     $definitions = $this->entityManager->getDefinitions();
     // If the extension provides configuration schema clear the definitions.
-    if (is_dir($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY)) {
-      $install_storage = new FileStorage($extension_path . '/' . InstallStorage::CONFIG_INSTALL_DIRECTORY);
-      $config_list = $install_storage->listAll();
-      if (count($config_list)) {
-        foreach ($config_list as $config_name) {
-          // Handle config entities.
-          if ($entity_type_id = $this->configManager->getEntityTypeIdByName($config_name)) {
-            if ($entity_type_id == $config_type) {
-              $id = substr($config_name, strlen($definitions[$entity_type_id]->getConfigPrefix()) + 1);
-              $entity_ids[] = $id;
+    foreach ($this->folderTypes as $folder_type) {
+      if (is_dir($extension_path . '/' . $folder_type)) {
+        $install_storage = new FileStorage($extension_path . '/' . $folder_type);
+        $config_list = $install_storage->listAll();
+        if (count($config_list)) {
+          foreach ($config_list as $config_name) {
+            // Handle config entities.
+            if ($entity_type_id = $this->configManager->getEntityTypeIdByName($config_name)) {
+              if ($entity_type_id == $config_type) {
+                $id = substr($config_name, strlen($definitions[$entity_type_id]->getConfigPrefix()) + 1);
+                $entity_ids[] = $id;
+              }
             }
           }
         }
       }
-      return $entity_ids;
     }
+    return $entity_ids;
   }
 
   protected function getModules() {
